@@ -4,6 +4,9 @@ from .database import get_session, engine
 from .todo_actions import create_todo, read_todos, delete_todo, complete_todo, get_task
 from .models import Todo
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
+
+
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
@@ -14,8 +17,33 @@ async def lifespan(app: FastAPI):
     create_db_and_tables()
     yield
 
-app = FastAPI(lifespan=lifespan, title="Hello World API with DB", version="0.0.1")
+app = FastAPI(lifespan=lifespan, title="Todo list API with Fastapi Sqlmodel and Neon postgresql DB", 
+              version="0.0.1",
+              servers=[
+                        {
+                            "url": "http://0.0.0.0:8000", 
+                            "description": "Development Server"
+                        },
+                        {
+                            "url": "https://hardy-flamingo-concrete.ngrok-free.app", # ADD NGROK URL Here Before Creating GPT Action
+                            "description": "Production Server"
+                        }
+        ])
+origins = [
+    "http://localhost.tiangolo.com",
+    "https://localhost.tiangolo.com",
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 @app.get("/")
 def read_root():
     return {"Hello": "World"}

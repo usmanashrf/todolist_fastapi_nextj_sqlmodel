@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 
-from typing import Union, Optional
+from typing import Union, Optional, Annotated
 
 from todo_core_apis import settings
 
@@ -10,7 +10,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 
 
 
@@ -21,94 +21,67 @@ class Todo(SQLModel, table=True):
     is_done:bool = Field(default=False)
 
 
-
-# only needed for psycopg 3 - replace postgresql
-
-# with postgresql+psycopg in settings.DATABASE_URL
-
 connection_string = str(settings.DATABASE_URL).replace(
-
     "postgresql", "postgresql+psycopg"
-
 )
-
 
 
 # recycle connections after 5 minutes
-
 # to correspond with the compute scale down
-
 engine = create_engine(
-
     connection_string, connect_args={"sslmode": "require"}, pool_recycle=300
-
 )
 
 
-
 def create_db_and_tables():
-
     SQLModel.metadata.create_all(engine)
 
 
-
 # The first part of the function, before the yield, will
-
-# be executed before the application starts
-
+# be executed before the application starts.
+# https://fastapi.tiangolo.com/advanced/events/#lifespan-function
 @asynccontextmanager
-
 async def lifespan(app: FastAPI):
-
     print("Creating tables..")
-
     create_db_and_tables()
-
     yield
 
 
+app = FastAPI(lifespan=lifespan, title="Hello World API with DB", 
+    version="0.0.1",
+    servers=[
+        {
+            "url": "http://0.0.0.0:8000", # ADD NGROK URL Here Before Creating GPT Action
+            "description": "Development Server"
+        }
+        ])
 
-app = FastAPI(lifespan=lifespan)
-
+def get_session():
+    with Session(engine) as session:
+        yield session
 
 
 @app.get("/")
-
 def read_root():
-
     return {"Hello": "World"}
 
-
-
-@app.post("/todos/")
-
-def create_todo(todo: Todo):
-
-    with Session(engine) as session:
-
+@app.post("/todos/", response_model=Todo)
+def create_todo(todo: Todo, session: Annotated[Session, Depends(get_session)]):
         session.add(todo)
-
         session.commit()
-
         session.refresh(todo)
-
         return todo
 
 
-
-@app.get("/todos/")
-
-def read_todos():
-
-    with Session(engine) as session:
-
+@app.get("/todos/", response_model=list[Todo])
+def read_todos(session: Annotated[Session, Depends(get_session)]):
         todos = session.exec(select(Todo)).all()
-
         return todos
-    
 
+
+#
 @app.delete("/todos/{todo_id}")
-def delete_todo(todo_id: int):
+def delete_todo(todo_id: int, session: Annotated[Session, Depends(get_session)]):
     with Session(engine) as session:
         todo = session.get(Todo, todo_id)
         if todo is None:
@@ -118,7 +91,7 @@ def delete_todo(todo_id: int):
         return {"message": "Todo deleted successfully"}
 
 @app.put("/todos/{todo_id}/complete")
-def complete_todo(todo_id: int):
+def complete_todo(todo_id: int, session: Annotated[Session, Depends(get_session)]):
     with Session(engine) as session:
         todo = session.get(Todo, todo_id)
         if todo is None:
@@ -127,3 +100,7 @@ def complete_todo(todo_id: int):
         session.add(todo)
         session.commit()
         return todo
+    
+
+
+    
